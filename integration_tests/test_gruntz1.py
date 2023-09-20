@@ -271,6 +271,11 @@ def test_mrv1():
     assert mmrv(-exp(1/x), x) == {x}
     #assert mmrv(exp(x + 1/x), x) == {exp(x + 1/x)}
 
+def test_mrv1b():
+    assert mmrv(exp(x)+exp(-x), x) == {exp(x), exp(-x)}
+    assert mmrv(exp(x)-exp(1/x), x) == {exp(x)}
+    assert mmrv(x**2 + x**3, x) == {x}
+
 
 def test_mrv2a():
     assert mmrv(exp(x + exp(-exp(x))), x) == {exp(-exp(x))}
@@ -307,3 +312,4 @@ def test_mrv4():
 
 
 test_mrv1()
+test_mrv1b()
