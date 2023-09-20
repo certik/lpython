@@ -30,99 +30,8 @@ from sympy.testing.pytest import XFAIL, skip, slow
 
 x = Symbol('x', real=True)
 
-class SubsSet(dict):
-    """
-    Stores (expr, dummy) pairs, and how to rewrite expr-s.
-
-    Explanation
-    ===========
-
-    The gruntz algorithm needs to rewrite certain expressions in term of a new
-    variable w. We cannot use subs, because it is just too smart for us. For
-    example::
-
-        > Omega=[exp(exp(_p - exp(-_p))/(1 - 1/_p)), exp(exp(_p))]
-        > O2=[exp(-exp(_p) + exp(-exp(-_p))*exp(_p)/(1 - 1/_p))/_w, 1/_w]
-        > e = exp(exp(_p - exp(-_p))/(1 - 1/_p)) - exp(exp(_p))
-        > e.subs(Omega[0],O2[0]).subs(Omega[1],O2[1])
-        -1/w + exp(exp(p)*exp(-exp(-p))/(1 - 1/p))
-
-    is really not what we want!
-
-    So we do it the hard way and keep track of all the things we potentially
-    want to substitute by dummy variables. Consider the expression::
-
-        exp(x - exp(-x)) + exp(x) + x.
-
-    The mrv set is {exp(x), exp(-x), exp(x - exp(-x))}.
-    We introduce corresponding dummy variables d1, d2, d3 and rewrite::
-
-        d3 + d1 + x.
-
-    This class first of all keeps track of the mapping expr->variable, i.e.
-    will at this stage be a dictionary::
-
-        {exp(x): d1, exp(-x): d2, exp(x - exp(-x)): d3}.
-
-    [It turns out to be more convenient this way round.]
-    But sometimes expressions in the mrv set have other expressions from the
-    mrv set as subexpressions, and we need to keep track of that as well. In
-    this case, d3 is really exp(x - d2), so rewrites at this stage is::
-
-        {d3: exp(x-d2)}.
-
-    The function rewrite uses all this information to correctly rewrite our
-    expression in terms of w. In this case w can be chosen to be exp(-x),
-    i.e. d2. The correct rewriting then is::
-
-        exp(-w)/w + 1/w + x.
-    """
-    def __init__(self):
-        self.rewrites = {}
-
-    def __repr__(self):
-        return super().__repr__() + ', ' + self.rewrites.__repr__()
-
-    def __getitem__(self, key):
-        if key not in self:
-            self[key] = Dummy()
-        return dict.__getitem__(self, key)
-
-    def do_subs(self, e):
-        """Substitute the variables with expressions"""
-        for expr, var in self.items():
-            e = e.xreplace({var: expr})
-        return e
-
-    def meets(self, s2):
-        """Tell whether or not self and s2 have non-empty intersection"""
-        return set(self.keys()).intersection(list(s2.keys())) != set()
-
-    def union(self, s2, exps=None):
-        """Compute the union of self and s2, adjusting exps"""
-        res = self.copy()
-        tr = {}
-        for expr, var in s2.items():
-            if expr in self:
-                if exps:
-                    exps = exps.xreplace({var: res[expr]})
-                tr[var] = res[expr]
-            else:
-                res[expr] = var
-        for var, rewr in s2.rewrites.items():
-            res.rewrites[var] = rewr.xreplace(tr)
-        return res, exps
-
-    def copy(self):
-        """Create a shallow copy of SubsSet"""
-        r = SubsSet()
-        r.rewrites = self.rewrites.copy()
-        for expr, var in self.items():
-            r[expr] = var
-        return r
-
 def mmrv(a, b):
-    return set(mrv(a, b)[0].keys())
+    return mrv(a, b)
 
 def mrv(e, x):
     """Returns a SubsSet of most rapidly varying (mrv) subexpressions of 'e',
@@ -130,18 +39,18 @@ def mrv(e, x):
     if not isinstance(e, Basic):
         raise TypeError("e should be an instance of Basic")
     if not e.has(x):
-        return SubsSet(), e
+        return set()
     elif e == x:
-        s = SubsSet()
-        return s, s[x]
+        s = {x}
+        return s
     elif e.is_Mul or e.is_Add:
         i, d = e.as_independent(x)  # throw away x-independent terms
         if d.func != e.func:
             s, expr = mrv(d, x)
-            return s, e.func(i, expr)
+            return s
         a, b = d.as_two_terms()
-        s1, e1 = mrv(a, x)
-        s2, e2 = mrv(b, x)
+        s1 = mrv(a, x)
+        s2 = mrv(b, x)
         return mrv_max1(s1, s2, e.func(i, e1, e2), x)
     elif e.is_Pow and e.base != S.Exp1:
         e1 = S.One
@@ -150,18 +59,18 @@ def mrv(e, x):
             e1 *= e.exp
             e = b1
         if b1 == 1:
-            return SubsSet(), b1
+            return set()
         if e1.has(x):
             base_lim = limitinf(b1, x)
             if base_lim is S.One:
                 return mrv(exp(e1 * (b1 - 1)), x)
             return mrv(exp(e1 * log(b1)), x)
         else:
-            s, expr = mrv(b1, x)
-            return s, expr**e1
+            s = mrv(b1, x)
+            return s
     elif isinstance(e, log):
         s, expr = mrv(e.args[0], x)
-        return s, log(expr)
+        return s
     elif isinstance(e, exp) or (e.is_Pow and e.base == S.Exp1):
         # We know from the theory of this algorithm that exp(log(...)) may always
         # be simplified here, and doing so is vital for termination.
@@ -180,7 +89,7 @@ def mrv(e, x):
             return mrv_max3(s1, e1, s2, exp(e2), su, e1, x)
         else:
             s, expr = mrv(e.exp, x)
-            return s, exp(expr)
+            return s
     raise NotImplementedError(
         "Don't know how to calculate the mrv of '%s'" % e)
 
@@ -195,22 +104,22 @@ def mrv_max3(f, expsf, g, expsg, union, expsboth, x):
         raise TypeError("f should be an instance of SubsSet")
     if not isinstance(g, SubsSet):
         raise TypeError("g should be an instance of SubsSet")
-    if f == SubsSet():
-        return g, expsg
-    elif g == SubsSet():
-        return f, expsf
+    if f == set():
+        return g
+    elif g == set():
+        return f
     elif f.meets(g):
-        return union, expsboth
+        return union
 
     c = compare(list(f.keys())[0], list(g.keys())[0], x)
     if c == ">":
-        return f, expsf
+        return f
     elif c == "<":
-        return g, expsg
+        return g
     else:
         if c != "=":
             raise ValueError("c should be =")
-        return union, expsboth
+        return union
 
 def limitinf(e, x):
     if e == x:
@@ -246,6 +155,7 @@ def mrv_max1(f, g, exps, x):
                     u, b, x)
 
 def test_mrv1():
+    print(mmrv(x, x))
     assert mmrv(x, x) == {x}
     assert mmrv(x + 1/x, x) == {x}
     assert mmrv(x**2, x) == {x}
