@@ -243,6 +243,8 @@ def limitinf(e, x):
         else:
             print(e)
             raise Exception("Pow implemented yet in limitinf().")
+    elif isinstance(e, log):
+        return oo
     else:
         print(e)
         raise Exception("Not implemented yet.")
