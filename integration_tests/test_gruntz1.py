@@ -127,8 +127,6 @@ def mmrv(a, b):
 def mrv(e, x):
     """Returns a SubsSet of most rapidly varying (mrv) subexpressions of 'e',
        and e rewritten in terms of these"""
-    from sympy.simplify.powsimp import powsimp
-    e = powsimp(e, deep=True, combine='exp')
     if not isinstance(e, Basic):
         raise TypeError("e should be an instance of Basic")
     if not e.has(x):
@@ -183,19 +181,6 @@ def mrv(e, x):
         else:
             s, expr = mrv(e.exp, x)
             return s, exp(expr)
-    elif e.is_Function:
-        l = [mrv(a, x) for a in e.args]
-        l2 = [s for (s, _) in l if s != SubsSet()]
-        if len(l2) != 1:
-            # e.g. something like BesselJ(x, x)
-            raise NotImplementedError("MRV set computation for functions in"
-                                      " several variables not implemented.")
-        s, ss = l2[0], SubsSet()
-        args = [ss.do_subs(x[1]) for x in l]
-        return s, e.func(*args)
-    elif e.is_Derivative:
-        raise NotImplementedError("MRV set computation for derivatives"
-                                  " not implemented yet.")
     raise NotImplementedError(
         "Don't know how to calculate the mrv of '%s'" % e)
 
