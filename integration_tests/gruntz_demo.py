@@ -131,242 +131,198 @@ from sympy.utilities.exceptions import SymPyDeprecationWarning
 from sympy.utilities.misc import debug_decorator as debug
 from sympy.utilities.timeutils import timethis
 
-
-
-@debug
-@cacheit
-@timeit
-def sign(e, x):
-    """
-    Returns a sign of an expression e(x) for x->oo.
-
-    ::
-
-        e >  0 for x sufficiently large ...  1
-        e == 0 for x sufficiently large ...  0
-        e <  0 for x sufficiently large ... -1
-
-    The result of this function is currently undefined if e changes sign
-    arbitrarily often for arbitrarily large x (e.g. sin(x)).
-
-    Note that this returns zero only if e is *constantly* zero
-    for x sufficiently large. [If e is constant, of course, this is just
-    the same thing as the sign of e.]
-    """
-    if not isinstance(e, Basic):
-        raise TypeError("e should be an instance of Basic")
-
-    if e.is_positive:
-        return 1
-    elif e.is_negative:
-        return -1
-    elif e.is_zero:
-        return 0
-
-    elif not e.has(x):
-        from sympy.simplify import logcombine
-        e = logcombine(e)
-        return _sign(e)
-    elif e == x:
-        return 1
-    elif e.is_Mul:
-        a, b = e.as_two_terms()
-        sa = sign(a, x)
-        if not sa:
-            return 0
-        return sa * sign(b, x)
-    elif isinstance(e, exp):
-        return 1
-    elif e.is_Pow:
-        if e.base == S.Exp1:
-            return 1
-        s = sign(e.base, x)
-        if s == 1:
-            return 1
-        if e.exp.is_Integer:
-            return s**e.exp
-    elif isinstance(e, log):
-        return sign(e.args[0] - 1, x)
-
-    # if all else fails, do it the hard way
-    c0, e0 = mrv_leadterm(e, x)
-    return sign(c0, x)
-
-
-@debug
 def mrv(e, x):
-    """Returns a SubsSet of most rapidly varying (mrv) subexpressions of 'e',
-       and e rewritten in terms of these"""
-    from sympy.simplify.powsimp import powsimp
-    e = powsimp(e, deep=True, combine='exp')
-    if not isinstance(e, Basic):
-        raise TypeError("e should be an instance of Basic")
+    """
+    Calculate the MRV set of the expression.
+
+    Examples
+    ========
+
+    >>> mrv(log(x - log(x))/log(x), x)
+    {x}
+
+    """
+    from ..functions import log
+
     if not e.has(x):
-        return SubsSet(), e
-    elif e == x:
-        s = SubsSet()
-        return s, s[x]
-    elif e.is_Mul or e.is_Add:
-        i, d = e.as_independent(x)  # throw away x-independent terms
-        if d.func != e.func:
-            s, expr = mrv(d, x)
-            return s, e.func(i, expr)
-        a, b = d.as_two_terms()
-        s1, e1 = mrv(a, x)
-        s2, e2 = mrv(b, x)
-        return mrv_max1(s1, s2, e.func(i, e1, e2), x)
-    elif e.is_Pow and e.base != S.Exp1:
-        e1 = S.One
-        while e.is_Pow:
-            b1 = e.base
-            e1 *= e.exp
-            e = b1
-        if b1 == 1:
-            return SubsSet(), b1
-        if e1.has(x):
-            if limitinf(b1, x) is S.One:
-                if limitinf(e1, x).is_infinite is False:
-                    return mrv(exp(e1*(b1 - 1)), x)
-            res = mrv(exp(e1*log(b1)), x)
-            return res
-        else:
-            s, expr = mrv(b1, x)
-            return s, expr**e1
-    elif isinstance(e, log):
-        s, expr = mrv(e.args[0], x)
-        return s, log(expr)
-    elif isinstance(e, exp) or (e.is_Pow and e.base == S.Exp1):
-        # We know from the theory of this algorithm that exp(log(...)) may always
-        # be simplified here, and doing so is vital for termination.
-        if isinstance(e.exp, log):
-            return mrv(e.exp.args[0], x)
-        # if a product has an infinite factor the result will be
-        # infinite if there is no zero, otherwise NaN; here, we
-        # consider the result infinite if any factor is infinite
-        li = limitinf(e.exp, x)
-        if any(_.is_infinite for _ in Mul.make_args(li)):
-            s1 = SubsSet()
-            e1 = s1[e]
-            s2, e2 = mrv(e.exp, x)
-            su = s1.union(s2)[0]
-            su.rewrites[e1] = exp(e2)
-            res = mrv_max3(s1, e1, s2, exp(e2), su, e1, x)
-            return res
-        else:
-            s, expr = mrv(e.exp, x)
-            return s, exp(expr)
-    elif e.is_Function:
-        l = [mrv(a, x) for a in e.args]
-        l2 = [s for (s, _) in l if s != SubsSet()]
-        if len(l2) != 1:
-            # e.g. something like BesselJ(x, x)
-            raise NotImplementedError("MRV set computation for functions in"
-                                      " several variables not implemented.")
-        s, ss = l2[0], SubsSet()
-        args = [ss.do_subs(x[1]) for x in l]
-        return s, e.func(*args)
-    elif e.is_Derivative:
-        raise NotImplementedError("MRV set computation for derivatives"
-                                  " not implemented yet.")
-    raise NotImplementedError(
-        "Don't know how to calculate the mrv of '%s'" % e)
+        return set()
+    if e == x:
+        return {x}
+    if e.is_Mul or e.is_Add:
+        a, b = e.as_two_terms()
+        return mrv_max(mrv(a, x), mrv(b, x), x)
+    if e.is_Exp:
+        if e.exp == x:
+            return {e}
+        if any(a.is_infinite for a in Mul.make_args(limitinf(e.exp, x))):
+            return mrv_max({e}, mrv(e.exp, x), x)
+        return mrv(e.exp, x)
+    if e.is_Pow:
+        return mrv(e.base, x)
+    if isinstance(e, log):
+        return mrv(e.args[0], x)
+    if e.is_Function and not isinstance(e.func, UndefinedFunction):
+        return functools.reduce(lambda a, b: mrv_max(a, b, x),
+                                (mrv(a, x) for a in e.args))
+    raise NotImplementedError(f"Can't calculate the MRV of {e}.")
 
+def rewrite(e, x, w):
+    r"""
+    Rewrites the expression in terms of the MRV subexpression.
 
-@debug
-@timeit
+    Parameters
+    ==========
+
+    e : Expr
+        an expression
+    x : Symbol
+        variable of the `e`
+    w : Symbol
+        The symbol which is going to be used for substitution in place
+        of the MRV in `x` subexpression.
+
+    Returns
+    =======
+
+    tuple
+        A pair: rewritten (in `w`) expression and `\log(w)`.
+
+    Examples
+    ========
+
+    >>> rewrite(exp(x)*log(x), x, y)
+    (log(x)/y, -x)
+
+    """
+    from ..functions import exp
+
+    Omega = mrv(e, x)
+    if not Omega:
+        return e, None  # e really does not depend on x
+
+    if x in Omega:
+        # Moving up in the asymptotical scale:
+        with evaluate(False):
+            e = e.xreplace({x: exp(x)})
+            Omega = {s.xreplace({x: exp(x)}) for s in Omega}
+
+    Omega = list(ordered(Omega, keys=lambda a: -len(mrv(a, x))))
+
+    for g in Omega:
+        sig = signinf(g.exp, x)
+        if sig not in (1, -1):
+            raise NotImplementedError(f'Result depends on the sign of {sig}.')
+
+    if sig == 1:
+        w = 1/w  # if g goes to oo, substitute 1/w
+
+    # Rewrite and substitute subexpressions in the Omega.
+    for a in Omega:
+        c = limitinf(a.exp/g.exp, x)
+        b = exp(a.exp - c*g.exp)*w**c  # exponential must never be expanded here
+        with evaluate(False):
+            e = e.xreplace({a: b})
+
+    return e, -sig*g.exp
+
 @cacheit
 def mrv_leadterm(e, x):
-    """Returns (c0, e0) for e."""
-    Omega = SubsSet()
-    if not e.has(x):
-        return (e, S.Zero)
-    if Omega == SubsSet():
-        Omega, exps = mrv(e, x)
-    if not Omega:
-        # e really does not depend on x after simplification
-        return exps, S.Zero
-    if x in Omega:
-        # move the whole omega up (exponentiate each term):
-        Omega_up = moveup2(Omega, x)
-        exps_up = moveup([exps], x)[0]
-        # NOTE: there is no need to move this down!
-        Omega = Omega_up
-        exps = exps_up
-    #
-    # The positive dummy, w, is used here so log(w*2) etc. will expand;
-    # a unique dummy is needed in this algorithm
-    #
-    # For limits of complex functions, the algorithm would have to be
-    # improved, or just find limits of Re and Im components separately.
-    #
-    w = Dummy("w", positive=True)
-    f, logw = rewrite(exps, Omega, x, w)
-    try:
-        lt = f.leadterm(w, logx=logw)
-    except (NotImplementedError, PoleError, ValueError):
-        n0 = 1
-        _series = Order(1)
-        incr = S.One
-        while _series.is_Order:
-            _series = f._eval_nseries(w, n=n0+incr, logx=logw)
-            incr *= 2
-        series = _series.expand().removeO()
-        try:
-            lt = series.leadterm(w, logx=logw)
-        except (NotImplementedError, PoleError, ValueError):
-            lt = f.as_coeff_exponent(w)
-            if lt[0].has(w):
-                base = f.as_base_exp()[0].as_coeff_exponent(w)
-                ex = f.as_base_exp()[1]
-                lt = (base[0]**ex, base[1]*ex)
-    return (lt[0].subs(log(w), logw), lt[1])
+    """
+    Compute the leading term of the series.
 
-@debug
-@timeit
+    Returns
+    =======
+
+    tuple
+        The leading term `c_0 w^{e_0}` of the series of `e` in terms
+        of the most rapidly varying subexpression `w` in form of
+        the pair ``(c0, e0)`` of Expr.
+
+    Examples
+    ========
+
+    >>> leadterm(1/exp(-x + exp(-x)) - exp(x), x)
+    (-1, 0)
+
+    """
+    from ..functions import exp, log
+
+    if not e.has(x):
+        return e, Integer(0)
+
+    # Rewrite to exp-log functions per Sec. 3.3 of thesis.
+    e = e.replace(lambda f: f.is_Pow and f.exp.has(x),
+                  lambda f: exp(log(f.base)*f.exp))
+    e = e.replace(lambda f: f.is_Mul and sum(a.is_Exp for a in f.args) > 1,
+                  lambda f: Mul(exp(Add(*(a.exp for a in f.args if a.is_Exp))),
+                                *(a for a in f.args if not a.is_Exp)))
+
+    # The positive dummy, w, is used here so log(w*2) etc. will expand.
+    # TODO: For limits of complex functions, the algorithm would have to
+    # be improved, or just find limits of Re and Im components separately.
+    w = Dummy('w', real=True, positive=True)
+    e, logw = rewrite(e, x, w)
+
+    c0, e0 = f.leadterm(w, logx=logw)
+    if c0.has(w):
+        raise NotImplementedError(f'Cannot compute leadterm({e}, {x}). '
+                                  'The coefficient should have been free of '
+                                  f'{w}, but got {c0}.')
+    return c0.subs(log(w), logw), e0
+
+@cacheit
+def signinf(e, x):
+    r"""
+    Determine sign of the expression at the infinity.
+
+    Returns
+    =======
+
+    {1, 0, -1}
+        One or minus one, if `e > 0` or `e < 0` for `x` sufficiently
+        large and zero if `e` is *constantly* zero for `x\to\infty`.
+
+    """
+    from ..functions import sign
+
+    if not e.has(x):
+        return sign(e).simplify()
+    if e == x or (e.is_Pow and signinf(e.base, x) == 1):
+        return Integer(1)
+    if e.is_Mul:
+        a, b = e.as_two_terms()
+        return signinf(a, x)*signinf(b, x)
+
+    c0, _ = leadterm(e, x)
+    return signinf(c0, x)
+
 @cacheit
 def limitinf(e, x):
-    """Limit e(x) for x-> oo."""
-    # rewrite e in terms of tractable functions only
+    """
+    Compute the limit of the expression at the infinity.
 
-    old = e
-    if not e.has(x):
-        return e  # e is a constant
-    from sympy.simplify.powsimp import powdenest
-    from sympy.calculus.util import AccumBounds
-    if e.has(Order):
-        e = e.expand().removeO()
-    if not x.is_positive or x.is_integer:
-        # We make sure that x.is_positive is True and x.is_integer is None
-        # so we get all the correct mathematical behavior from the expression.
-        # We need a fresh variable.
-        p = Dummy('p', positive=True)
-        e = e.subs(x, p)
-        x = p
+    Examples
+    ========
+
+    >>> limitinf(exp(x)*(exp(1/x - exp(-x)) - exp(1/x)), x)
+    -1
+
+    """
+    # Rewrite e in terms of tractable functions only:
     e = e.rewrite('tractable', deep=True, limitvar=x)
-    e = powdenest(e)
-    if isinstance(e, AccumBounds):
-        if mrv_leadterm(e.min, x) != mrv_leadterm(e.max, x):
-            raise NotImplementedError
-        c0, e0 = mrv_leadterm(e.min, x)
-    else:
-        c0, e0 = mrv_leadterm(e, x)
-    sig = sign(e0, x)
+
+    if not e.has(x):
+        return e.rewrite('intractable', deep=True)
+
+    c0, e0 = mrv_leadterm(e, x)
+    sig = signinf(e0, x)
     if sig == 1:
-        return S.Zero  # e0>0: lim f = 0
-    elif sig == -1:  # e0<0: lim f = +-oo (the sign depends on the sign of c0)
-        if c0.match(I*Wild("a", exclude=[I])):
-            return c0*oo
-        s = sign(c0, x)
-        # the leading term shouldn't be 0:
-        if s == 0:
-            raise ValueError("Leading term should not be 0")
-        return s*oo
-    elif sig == 0:
-        if c0 == old:
-            c0 = c0.cancel()
-        return limitinf(c0, x)  # e0=0: lim f = lim c0
-    else:
-        raise ValueError("{} could not be evaluated".format(sig))
+        return Integer(0)
+    if sig == -1:
+        return signinf(c0, x)*oo
+    if sig == 0:
+        return limitinf(c0, x)
+    raise NotImplementedError(f'Result depends on the sign of {sig}.')
 
 
 def gruntz(e, z, z0, dir="+"):
