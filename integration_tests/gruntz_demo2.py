@@ -192,8 +192,7 @@ def rewrite(e, x, w):
     Returns
     =======
 
-    tuple
-        A pair: rewritten (in `w`) expression and `\log(w)`.
+    The rewritten expression
 
     Examples
     ========
@@ -204,8 +203,6 @@ def rewrite(e, x, w):
     """
 
     Omega = mrv(e, x)
-    if not Omega:
-        return e, None  # e really does not depend on x
 
     if x in Omega:
         # Moving up in the asymptotical scale:
@@ -230,7 +227,7 @@ def rewrite(e, x, w):
         with evaluate(False):
             e = e.xreplace({a: b})
 
-    return e, -sig*g.exp
+    return e
 
 @cacheit
 def mrv_leadterm(e, x):
@@ -254,7 +251,7 @@ def mrv_leadterm(e, x):
     """
 
     w = Dummy('w', real=True, positive=True)
-    e, logw = rewrite(e, x, w)
+    e = rewrite(e, x, w)
     return e.leadterm(w)
 
 @cacheit
