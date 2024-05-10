@@ -207,8 +207,8 @@ def rewrite(e, x, w):
     if x in Omega:
         # Moving up in the asymptotical scale:
         with evaluate(False):
-            e = e.xreplace({x: exp(x)})
-            Omega = {s.xreplace({x: exp(x)}) for s in Omega}
+            e = e.subs(x, exp(x))
+            Omega = {s.subs(x, exp(x)) for s in Omega}
 
     Omega = list(ordered(Omega, keys=lambda a: -len(mrv(a, x))))
 
@@ -225,7 +225,7 @@ def rewrite(e, x, w):
         c = limitinf(a.exp/g.exp, x)
         b = exp(a.exp - c*g.exp)*w**c  # exponential must never be expanded here
         with evaluate(False):
-            e = e.xreplace({a: b})
+            e = e.subs(a, b)
 
     return e
 
