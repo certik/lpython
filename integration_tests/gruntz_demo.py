@@ -118,14 +118,14 @@ debug this function to figure out the exact problem.
 """
 from functools import reduce
 
-from sympy.core import Basic, S, Mul, PoleError, expand_mul
+from sympy.core import Basic, S, Mul, PoleError, expand_mul, evaluate
 from sympy.core.cache import cacheit
-from sympy.core.intfunc import ilcm
 from sympy.core.numbers import I, oo
-from sympy.core.symbol import Dummy, Wild
+from sympy.core.symbol import Dummy, Wild, Symbol
 from sympy.core.traversal import bottom_up
+from sympy.core.sorting import ordered
 
-from sympy.functions import log, exp, sign as _sign
+from sympy.functions import log, exp, sign, sin
 from sympy.series.order import Order
 from sympy.utilities.exceptions import SymPyDeprecationWarning
 from sympy.utilities.misc import debug_decorator as debug
@@ -142,7 +142,6 @@ def mrv(e, x):
     {x}
 
     """
-    from ..functions import log
 
     if not e.has(x):
         return set()
@@ -151,7 +150,7 @@ def mrv(e, x):
     if e.is_Mul or e.is_Add:
         a, b = e.as_two_terms()
         return mrv_max(mrv(a, x), mrv(b, x), x)
-    if e.is_Exp:
+    if e.func == exp:
         if e.exp == x:
             return {e}
         if any(a.is_infinite for a in Mul.make_args(limitinf(e.exp, x))):
@@ -161,10 +160,40 @@ def mrv(e, x):
         return mrv(e.base, x)
     if isinstance(e, log):
         return mrv(e.args[0], x)
-    if e.is_Function and not isinstance(e.func, UndefinedFunction):
-        return functools.reduce(lambda a, b: mrv_max(a, b, x),
-                                (mrv(a, x) for a in e.args))
+    if e.is_Function:
+        return reduce(lambda a, b: mrv_max(a, b, x), (mrv(a, x) for a in e.args))
     raise NotImplementedError(f"Can't calculate the MRV of {e}.")
+
+def mrv_max(f, g, x):
+    """Compute the maximum of two MRV sets.
+
+    Examples
+    ========
+
+    >>> mrv_max({log(x)}, {x**5}, x)
+    {x**5}
+
+    """
+
+    if not f:
+        return g
+    if not g:
+        return f
+    if f & g:
+        return f | g
+
+    a, b = map(next, map(iter, (f, g)))
+
+    # The log(exp(...)) must always be simplified here.
+    la = a.exp if a.is_Exp else log(a)
+    lb = b.exp if b.is_Exp else log(b)
+
+    c = limitinf(la/lb, x)
+    if c.is_zero:
+        return g
+    if c.is_infinite:
+        return f
+    return f | g
 
 def rewrite(e, x, w):
     r"""
@@ -194,7 +223,6 @@ def rewrite(e, x, w):
     (log(x)/y, -x)
 
     """
-    from ..functions import exp
 
     Omega = mrv(e, x)
     if not Omega:
@@ -245,7 +273,6 @@ def mrv_leadterm(e, x):
     (-1, 0)
 
     """
-    from ..functions import exp, log
 
     if not e.has(x):
         return e, Integer(0)
@@ -253,9 +280,9 @@ def mrv_leadterm(e, x):
     # Rewrite to exp-log functions per Sec. 3.3 of thesis.
     e = e.replace(lambda f: f.is_Pow and f.exp.has(x),
                   lambda f: exp(log(f.base)*f.exp))
-    e = e.replace(lambda f: f.is_Mul and sum(a.is_Exp for a in f.args) > 1,
-                  lambda f: Mul(exp(Add(*(a.exp for a in f.args if a.is_Exp))),
-                                *(a for a in f.args if not a.is_Exp)))
+    e = e.replace(lambda f: f.is_Mul and sum(a.func == exp for a in f.args) > 1,
+                  lambda f: Mul(exp(Add(*(a.exp for a in f.args if a.func == exp))),
+                                *(a for a in f.args if not a.func == exp)))
 
     # The positive dummy, w, is used here so log(w*2) etc. will expand.
     # TODO: For limits of complex functions, the algorithm would have to
@@ -263,7 +290,7 @@ def mrv_leadterm(e, x):
     w = Dummy('w', real=True, positive=True)
     e, logw = rewrite(e, x, w)
 
-    c0, e0 = f.leadterm(w, logx=logw)
+    c0, e0 = e.leadterm(w, logx=logw)
     if c0.has(w):
         raise NotImplementedError(f'Cannot compute leadterm({e}, {x}). '
                                   'The coefficient should have been free of '
@@ -283,12 +310,11 @@ def signinf(e, x):
         large and zero if `e` is *constantly* zero for `x\to\infty`.
 
     """
-    from ..functions import sign
 
     if not e.has(x):
         return sign(e).simplify()
     if e == x or (e.is_Pow and signinf(e.base, x) == 1):
-        return Integer(1)
+        return S(1)
     if e.is_Mul:
         a, b = e.as_two_terms()
         return signinf(a, x)*signinf(b, x)
@@ -366,3 +392,8 @@ def gruntz(e, z, z0, dir="+"):
     # It might be nicer to rewrite the exactly to what they were initially,
     # but that would take some work to implement.
     return r.rewrite('intractable', deep=True)
+
+# tests
+x = Symbol('x')
+ans = gruntz(sin(x)/x, x, 0)
+print(ans)
