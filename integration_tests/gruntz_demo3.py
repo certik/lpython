@@ -1,7 +1,7 @@
 from lpython import S, str
-from sympy import Symbol, Pow, sin, oo, pi, E
+from sympy import Symbol, Pow, sin, oo, pi, E, Mul, Add
 
-def mmrv(e: S, x: S) -> list[S]:
+def mrv(e: S, x: S) -> list[S]:
     """
     Calculate the MRV set of the expression.
 
@@ -16,7 +16,7 @@ def mmrv(e: S, x: S) -> list[S]:
     if e == x:
         list1: list[S] = [x]
         return list1
-    if e.is_Mul or e.is_Add:
+    if e.func == Mul or e.func == Add:
         a: S = e.args[0]
         b: S = e.args[1]
         ans1: list[S] = mrv(a, x)
@@ -26,7 +26,7 @@ def mmrv(e: S, x: S) -> list[S]:
         base: S = e.args[0]
         list3: list[S] = mrv(base, x)
         return list3
-    if e.is_Function:q
+    if e.is_Function:
         return reduce(lambda a, b: mrv_max(a, b, x), (mrv(a, x) for a in e.args))
     raise NotImplementedError(f"Can't calculate the MRV of {e}.")
 
