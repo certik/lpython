@@ -332,9 +332,16 @@ def gruntz(e, z, z0, dir="+"):
 
 # tests
 x = Symbol('x')
-ans = gruntz(sin(x)/x, x, 0)
-print(ans)
-print(gruntz(sin(x)**2/x, x, 0))
-print(gruntz(sin(x)/x**2, x, 0))
-print(gruntz(sin(x)**2/x**2, x, 0))
-print(gruntz(sin(sin(sin(x)))/sin(x), x, 0))
+# Print the basic limit:
+print(gruntz(sin(x)/x, x, 0))
+
+# Test other cases
+assert gruntz(sin(x)/x, x, 0) == 1
+assert gruntz(2*sin(x)/x, x, 0) == 2
+assert gruntz(sin(2*x)/x, x, 0) == 2
+assert gruntz(sin(x)**2/x, x, 0) == 0
+assert gruntz(sin(x)/x**2, x, 0) == oo
+assert gruntz(sin(x)**2/x**2, x, 0) == 1
+assert gruntz(sin(sin(sin(x)))/sin(x), x, 0) == 1
+assert gruntz(2*log(x+1)/x, x, 0) == 2
+assert gruntz(sin((log(x+1)/x)*x)/x, x, 0) == 1
