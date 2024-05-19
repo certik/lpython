@@ -118,7 +118,7 @@ debug this function to figure out the exact problem.
 """
 from functools import reduce
 
-from sympy.core import Basic, S, Mul, PoleError, expand_mul, evaluate
+from sympy.core import Basic, S, Mul, PoleError, expand_mul, evaluate, Integer
 from sympy.core.cache import cacheit
 from sympy.core.numbers import I, oo
 from sympy.core.symbol import Dummy, Wild, Symbol
@@ -332,3 +332,7 @@ def gruntz(e, z, z0, dir="+"):
 x = Symbol('x')
 ans = gruntz(sin(x)/x, x, 0)
 print(ans)
+print(gruntz(sin(x)**2/x, x, 0))
+print(gruntz(sin(x)/x**2, x, 0))
+print(gruntz(sin(x)**2/x**2, x, 0))
+print(gruntz(sin(sin(sin(x)))/sin(x), x, 0))
