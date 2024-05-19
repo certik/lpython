@@ -145,14 +145,16 @@ def mrv(e, x):
 
     if e == x:
         return {x}
-    if e.is_Mul or e.is_Add:
+    elif e.is_Integer:
+        return {}
+    elif e.is_Mul or e.is_Add:
         a, b = e.as_two_terms()
         ans1 = mrv(a, x)
         ans2 = mrv(b, x)
         return mrv_max(mrv(a, x), mrv(b, x), x)
-    if e.is_Pow:
+    elif e.is_Pow:
         return mrv(e.base, x)
-    if e.is_Function:
+    elif e.is_Function:
         return reduce(lambda a, b: mrv_max(a, b, x), (mrv(a, x) for a in e.args))
     raise NotImplementedError(f"Can't calculate the MRV of {e}.")
 
